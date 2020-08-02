@@ -1419,19 +1419,44 @@ void enable_vmx(void)
 
 static void init_vmx_caps(void)
 {
+	/* BASIC VMX INFORMATION, sdm Vol.3D A-1 */
 	basic.val = rdmsr(MSR_IA32_VMX_BASIC);
+	/* It is necessary for software to consult only one of the capability MSRs
+	 * to determine the allowed settings of the pinbased VM-execution controls 
+	 */
 	ctrl_pin_rev.val = rdmsr(basic.ctrl ? MSR_IA32_VMX_TRUE_PIN
 			: MSR_IA32_VMX_PINBASED_CTLS);
+	/* It is necessary for software to consult only one of the capability MSRs 
+	 * to determine the allowed settings of the VM-exit controls
+	 */
 	ctrl_exit_rev.val = rdmsr(basic.ctrl ? MSR_IA32_VMX_TRUE_EXIT
 			: MSR_IA32_VMX_EXIT_CTLS);
+	/* It is necessary for software to consult only one of the capability MSRs
+	 * to determine the allowed settings of the VM-entry controls
+	 */
 	ctrl_enter_rev.val = rdmsr(basic.ctrl ? MSR_IA32_VMX_TRUE_ENTRY
 			: MSR_IA32_VMX_ENTRY_CTLS);
+	/* It is necessary for software to consult only one of the capability MSRs
+	 * to determine the allowed settings of the primary processor-based VM-execution controls
+	 */
 	ctrl_cpu_rev[0].val = rdmsr(basic.ctrl ? MSR_IA32_VMX_TRUE_PROC
 			: MSR_IA32_VMX_PROCBASED_CTLS);
+	/* The IA32_VMX_PROCBASED_CTLS2 MSR exists only on processors
+	 * that support the 1-setting of the “activate secondary controls” VM-execution control
+	 * (only if bit 63 of the IA32_VMX_PROCBASED_CTLS MSR is 1)
+	 */
 	if ((ctrl_cpu_rev[0].clr & CPU_SECONDARY) != 0)
 		ctrl_cpu_rev[1].val = rdmsr(MSR_IA32_VMX_PROCBASED_CTLS2);
 	else
 		ctrl_cpu_rev[1].val = 0;
+	/* The IA32_VMX_EPT_VPID_CAP MSR exists only on processors that support the 1-setting
+	 * of the “activate secondary controls” VM-execution control
+	 * (only if bit 63 of the IA32_VMX_PROCBASED_CTLS MSR is 1) and
+	 * that support either the 1-setting of the “enable EPT” VM-execution control 
+	 * (only if bit 33 of the IA32_VMX_PROCBASED_CTLS2 MSR is 1) 
+	 * or the 1-setting of the “enable VPID” VM-execution control
+	 * (only if bit 37 of the IA32_VMX_PROCBASED_CTLS2 MSR is 1).
+	 */
 	if ((ctrl_cpu_rev[1].clr & (CPU_EPT | CPU_VPID)) != 0)
 		ept_vpid.val = rdmsr(MSR_IA32_VMX_EPT_VPID_CAP);
 	else
@@ -1443,19 +1468,49 @@ void init_vmx(u64 *vmxon_region)
 	ulong fix_cr0_set, fix_cr0_clr;
 	ulong fix_cr4_set, fix_cr4_clr;
 
+	/* Software should consult the VMX capability MSRs IA32_VMX_CR0_FIXED0 and IA32_VMX_CR0_FIXED1
+	 * to determine how bits in CR0 are fixed (see Appendix A.7). 
+	 * For CR4, software should consult the VMX capability MSRs IA32_VMX_CR4_FIXED0 
+	 * and IA32_VMX_CR4_FIXED1 (see Appendix A.8).
+	 */
 	fix_cr0_set =  rdmsr(MSR_IA32_VMX_CR0_FIXED0);
 	fix_cr0_clr =  rdmsr(MSR_IA32_VMX_CR0_FIXED1);
 	fix_cr4_set =  rdmsr(MSR_IA32_VMX_CR4_FIXED0);
 	fix_cr4_clr = rdmsr(MSR_IA32_VMX_CR4_FIXED1);
 
+	/* If bit X is 1 in IA32_VMX_CR0_FIXED0, 
+	 * then that bit of CR0 is fixed to 1 in VMX operation.
+	 * If bit X is 0 in IA32_VMX_CR0_FIXED1,
+	 * then that bit of CR0 is fixed to 0 in VMX operation. 
+	 */
 	write_cr0((read_cr0() & fix_cr0_clr) | fix_cr0_set);
+	/* If bit X is 1 in IA32_VMX_CR4_FIXED0,
+	 * then that bit of CR4 is fixed to 1 in VMX operation. 
+	 * If bit X is 0 in IA32_VMX_CR4_FIXED1,
+	 * then that bit of CR4 is fixed to 0 in VMX operation.
+	 * Before system software can enter VMX operation,
+	 * it enables VMX by setting CR4.VMXE[bit 13] = 1.
+	 */
 	write_cr4((read_cr4() & fix_cr4_clr) | fix_cr4_set | X86_CR4_VMXE);
 
+	/* IA32_VMX_BASIC MSR:
+	 * Bits 30:0 contain the 31-bit VMCS revision identifier used by the processor. 
+	 * Processors that use the same VMCS revision identifier use the same size for VMCS regions.
+	 * Bit 31 is always 0.
+	 * 
+	 * Before executing VMXON, software should write the VMCS revision identifier to the VMXON region.
+	 * (Specifically, it should write the 31-bit VMCS revision identifier to 
+	 * bits 30:0 of the first 4 bytes of the VMXON region; bit 31 should be cleared to 0.)
+	 */
 	*vmxon_region = basic.revision;
 }
 
 static void alloc_bsp_vmx_pages(void)
 {
+	/* Before executing VMXON, software allocates a region of memory (called the VMXON region)
+	 * that the logical processor uses to support VMX operation. 
+	 * The physical address of this region (the VMXON pointer) is provided in an operand to VMXON. 
+	 */
 	bsp_vmxon_region = alloc_page();
 	guest_stack = alloc_page();
 	guest_syscall_stack = alloc_page();
@@ -2104,6 +2159,7 @@ int main(int argc, const char *argv[])
 	argv++;
 	argc--;
 
+	/* If CPUID.1:ECX.VMX[bit 5] = 1, then VMX operation is supported. */
 	if (!this_cpu_has(X86_FEATURE_VMX)) {
 		printf("WARNING: vmx not supported, add '-cpu host'\n");
 		goto exit;

@@ -139,6 +139,7 @@ MSR_GS_BASE = 0xc0000101
 	wrmsr
 .endm
 
+/* entry point */
 .globl start
 start:
 	mov %ebx, mb_boot_info
@@ -273,6 +274,7 @@ start64:
 	mov __argc(%rip), %edi
 	lea __argv(%rip), %rsi
 	lea __environ(%rip), %rdx
+	/* jump to main function */
 	call main
 	mov %eax, %edi
 	call exit
