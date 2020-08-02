@@ -51,6 +51,8 @@ include $(SRCDIR)/$(TEST_DIR)/Makefile
 COMMON_CFLAGS += -g $(autodepend-flags) -fno-strict-aliasing -fno-common
 COMMON_CFLAGS += -Wall -Wwrite-strings -Wempty-body -Wuninitialized
 COMMON_CFLAGS += -Wignored-qualifiers -Werror
+COMMON_CFLAGS += -Wno-unused-variable
+COMMON_CFLAGS += -Wno-unused-function
 
 frame-pointer-flag=-f$(if $(KEEP_FRAME_POINTER),no-,)omit-frame-pointer
 fomit_frame_pointer := $(call cc-option, $(frame-pointer-flag), "")
