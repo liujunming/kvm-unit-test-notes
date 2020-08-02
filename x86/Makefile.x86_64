@@ -14,7 +14,6 @@ tests = $(TEST_DIR)/access.flat $(TEST_DIR)/apic.flat \
 	  $(TEST_DIR)/ioapic.flat $(TEST_DIR)/memory.flat \
 	  $(TEST_DIR)/pku.flat $(TEST_DIR)/hyperv_clock.flat
 tests += $(TEST_DIR)/syscall.flat
-tests += $(TEST_DIR)/svm.flat
 tests += $(TEST_DIR)/vmx.flat
 tests += $(TEST_DIR)/tscdeadline_latency.flat
 tests += $(TEST_DIR)/intel-iommu.flat
@@ -26,4 +25,3 @@ include $(SRCDIR)/$(TEST_DIR)/Makefile.common
 $(TEST_DIR)/hyperv_clock.elf: $(TEST_DIR)/hyperv_clock.o
 
 $(TEST_DIR)/vmx.elf: $(TEST_DIR)/vmx_tests.o
-$(TEST_DIR)/svm.elf: $(TEST_DIR)/svm_tests.o
