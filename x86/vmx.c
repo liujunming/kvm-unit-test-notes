@@ -1541,9 +1541,17 @@ static int test_vmx_feature_control(void)
 	bool vmx_enabled;
 	bool feature_control_locked;
 
+	/* VMXON is also controlled by the IA32_FEATURE_CONTROL MSR. */
 	ia32_feature_control = rdmsr(MSR_IA32_FEATURE_CONTROL);
+	/* Bit 2 enables VMXON outside SMX operation. */
 	vmx_enabled =
 		ia32_feature_control & FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
+	/* Bit 0 is the lock bit.
+	 *
+	 * System BIOS can use this bit to provide a setup option for BIOS to disable support for VMX.
+	 * To enable VMX support in a platform, BIOS must set bit 1, bit 2, or both,
+	 * as well as the lock bit.
+	 */
 	feature_control_locked =
 		ia32_feature_control & FEATURE_CONTROL_LOCKED;
 
@@ -1586,6 +1594,7 @@ static int test_vmxon(void)
 
 	/* Unaligned page access */
 	vmxon_region = (u64 *)((intptr_t)bsp_vmxon_region + 1);
+	/* The VMXON pointer must be 4-KByte aligned */
 	ret1 = _vmx_on(vmxon_region);
 	report(ret1, "test vmxon with unaligned vmxon region");
 	if (!ret1) {
@@ -1595,6 +1604,9 @@ static int test_vmxon(void)
 
 	/* gpa bits beyond physical address width are set*/
 	vmxon_region = (u64 *)((intptr_t)bsp_vmxon_region | ((u64)1 << (width+1)));
+	/* The VMXON pointer must not set any bits 
+	 * beyond the processor’s physical-address width 
+	 */
 	ret1 = _vmx_on(vmxon_region);
 	report(ret1, "test vmxon with bits set beyond physical address width");
 	if (!ret1) {
@@ -1620,31 +1632,53 @@ out:
 	return ret;
 }
 
+/* This instruction takes a single 64-bit source operand that is in memory. 
+ * It makes the referenced VMCS active and current, 
+ * loading the current-VMCS pointer with this operand and 
+ * establishes the current VMCS based on the contents of VMCS-data area in the referenced VMCS region. 
+ */
 static void test_vmptrld(void)
 {
 	struct vmcs *vmcs, *tmp_root;
 	int width = cpuid_maxphyaddr();
 
 	vmcs = alloc_page();
+	/* Bits 30:0: VMCS revision identifier */
 	vmcs->hdr.revision_id = basic.revision;
 
 	/* Unaligned page access */
 	tmp_root = (struct vmcs *)((intptr_t)vmcs + 1);
+	/* IF addr is not 4KB-aligned, 
+	 * THEN VMfai(VMPTRLD with invalid physical address)
+	 */
 	report(make_vmcs_current(tmp_root) == 1,
 	       "test vmptrld with unaligned vmcs");
 
 	/* gpa bits beyond physical address width are set*/
 	tmp_root = (struct vmcs *)((intptr_t)vmcs |
 				   ((u64)1 << (width+1)));
+	/* IF addr sets any bits beyond the physical-address width,
+	 * THEN VMfai(VMPTRLD with invalid physical address)
+	 */
 	report(make_vmcs_current(tmp_root) == 1,
 	       "test vmptrld with vmcs address bits set beyond physical address width");
 
 	/* Pass VMXON region */
+	/* This instruction takes a single 64-bit operand that is in memory.
+	 * The instruction sets the launch state of the VMCS referenced by the operand to “clear”,
+	 * renders that VMCS inactive, and ensures that data for the VMCS have been written to
+	 * the VMCS-data area in the referenced VMCS region. 
+	 * If the operand is the same as the current-VMCS pointer, that pointer is made invalid.
+	 */
 	assert(!vmcs_clear(vmcs));
 	assert(!make_vmcs_current(vmcs));
 	tmp_root = (struct vmcs *)bsp_vmxon_region;
+	/* IF addr = VMXON pointer,
+	 * THEN VMfail(VMPTRLD with VMXON pointer).
+	 */
 	report(make_vmcs_current(tmp_root) == 1,
 	       "test vmptrld with vmxon region");
+	/* VMPTRLD with VMXON pointer */
 	report(vmcs_read(VMX_INST_ERROR) == VMXERR_VMPTRLD_VMXON_POINTER,
 	       "test vmptrld with vmxon region vm-instruction error");
 

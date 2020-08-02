@@ -7,6 +7,9 @@
 #include "asm/page.h"
 #include "asm/io.h"
 
+/* Bits 30:0: VMCS revision identifier,
+ * Bit 31: shadow-VMCS indicator.
+ */
 struct vmcs_hdr {
 	u32 revision_id:31;
 	u32 shadow_vmcs:1;
@@ -513,6 +516,10 @@ enum Intr_type {
 
 /*
  * VM-instruction error numbers
+ *
+ * SDM 30.4
+ * For certain error conditions, the VM-instruction error field is 
+ * loaded with an error number to indicate the source of the error.
  */
 enum vm_instruction_error_number {
 	VMXERR_VMCALL_IN_VMX_ROOT_OPERATION = 1,
