@@ -337,6 +337,16 @@ static bool check_all_vmcs_fields(u8 cookie)
 	return pass;
 }
 
+/* SDM: 24.11.2 VMREAD, VMWRITE, and Encodings of VMCS Fields
+ * each field in the VMCS is associated with a 32-bit encoding
+ * which is structured as follows:
+ * Bits 31:15 are reserved (must be 0)
+ * Bits 14:13 indicate the field’s width
+ * Bit 12 is reserved (must be 0)
+ * Bits 11:10 indicate the field’s type
+ * Bits 9:1 is an index field that distinguishes different fields with the same width and type
+ * Bit 0 indicates access type
+ */
 static u32 find_vmcs_max_index(void)
 {
 	u32 idx, width, type, enc;
@@ -354,6 +364,7 @@ static u32 find_vmcs_max_index(void)
 				      (width << VMCS_FIELD_WIDTH_SHIFT);
 
 				ret = vmcs_read_checking(enc, &actual);
+				/* SDM: 30.2 CONVENTIONS */
 				assert(!(ret & X86_EFLAGS_CF));
 				if (!(ret & X86_EFLAGS_ZF))
 					return idx;
@@ -377,6 +388,8 @@ static void test_vmwrite_vmread(void)
 	set_all_vmcs_fields(0x42);
 	report(check_all_vmcs_fields(0x42), "VMWRITE/VMREAD");
 
+	/* The IA32_VMX_VMCS_ENUM MSR (index 48AH) provides information to
+	 * assist software in enumerating fields in the VMCS */
 	vmcs_enum_max = (rdmsr(MSR_IA32_VMX_VMCS_ENUM) & VMCS_FIELD_INDEX_MASK)
 			>> VMCS_FIELD_INDEX_SHIFT;
 	max_index = find_vmcs_max_index();
@@ -410,6 +423,7 @@ static void prep_flags_test_env(void **vpage, struct vmcs **vmcs, handler *old)
 {
 	/*
 	 * get an unbacked address that will cause a #PF
+	 * (Without physical backing)
 	 */
 	*vpage = alloc_vpage();
 
@@ -827,6 +841,12 @@ static void test_vmclear_flushing(void)
 	}
 }
 
+/* This instruction takes a single 64-bit operand that is in memory.
+ * The instruction sets the launch state of the VMCS referenced by the operand to “clear”,
+ * renders that VMCS inactive, and ensures that data for the VMCS have been written to
+ * the VMCS-data area in the referenced VMCS region. 
+ * If the operand is the same as the current-VMCS pointer, that pointer is made invalid.
+ */
 static void test_vmclear(void)
 {
 	struct vmcs *tmp_root;
@@ -1693,6 +1713,7 @@ static void test_vmptrst(void)
 
 	vmcs1 = alloc_page();
 	init_vmcs(&vmcs1);
+	/* VMPTRST : Stores the current-VMCS pointer into a specified memory address. */
 	ret = vmcs_save(&vmcs2);
 	report((!ret) && (vmcs1 == vmcs2), "test vmptrst");
 }
@@ -1729,7 +1750,17 @@ static void test_vmx_caps(void)
 	       basic.reserved1 == 0 && basic.reserved2 == 0,
 	       "MSR_IA32_VMX_BASIC");
 
+	/* SDM: Vol.3D A-5 A.6 MISCELLANEOUS DATA */
 	val = rdmsr(MSR_IA32_VMX_MISC);
+	/* (!(ctrl_cpu_rev[1].clr & CPU_URG) || val & (1ul << 5))
+	 *	- !(ctrl_cpu_rev[1].clr & CPU_URG): Unrestricted guest,
+	 *		# This control determines whether guest software
+	 *		# may run in unpaged protected mode or in realaddress mode.
+	 *	- val & (1ul << 5):
+	 *		# This bit is read as 1 on any logical processor that supports the 1-setting of
+	 *		# the “unrestricted guest” VM-execution control.
+	 * (val & 0x80007e00) == 0: Bits 13:9 and bit 31 are reserved and are read as 0.
+	 */
 	report((!(ctrl_cpu_rev[1].clr & CPU_URG) || val & (1ul << 5)) &&
 	       ((val >> 16) & 0x1ff) <= 256 &&
 	       (val & 0x80007e00) == 0,
@@ -1759,6 +1790,7 @@ static void test_vmx_caps(void)
 	       "MSR_IA32_VMX_IA32_VMX_CR4_FIXED0/1");
 
 	val = rdmsr(MSR_IA32_VMX_VMCS_ENUM);
+	/* Guest IA32_SYSENTER_CS 000010101B */
 	report((val & VMCS_FIELD_INDEX_MASK) >= 0x2a &&
 	       (val & 0xfffffffffffffc01Ull) == 0,
 	       "MSR_IA32_VMX_VMCS_ENUM");

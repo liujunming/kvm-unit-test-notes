@@ -715,6 +715,7 @@ enum vm_entry_failure_code {
  */
 #define VMCS_FIELD_HIGH_SHIFT		(0)
 #define VMCS_FIELD_INDEX_SHIFT		(1)
+/* Bits 9:1 contain the highest index value used for any VMCS encoding */
 #define VMCS_FIELD_INDEX_MASK		GENMASK(9, 1)
 #define VMCS_FIELD_TYPE_SHIFT		(10)
 #define VMCS_FIELD_WIDTH_SHIFT		(13)
